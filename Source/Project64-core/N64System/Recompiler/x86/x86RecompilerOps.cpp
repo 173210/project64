@@ -7541,6 +7541,17 @@ void CX86RecompilerOps::COP0_MF()
     MoveVariableToX86reg(&_CP0[m_Opcode.rd], CRegName::Cop0[m_Opcode.rd], GetMipsRegMapLo(m_Opcode.rt));
 }
 
+static void CheckCp0Status(uint32_t status)
+{
+    if ((status & 0x300) != 0){ g_Notify->DisplayError("Set IP0 or IP1"); }
+}
+
+static void CheckRtAndInterrupts(CRegisters *reg, uint32_t status)
+{
+    CheckCp0Status(status);
+    reg->CheckInterrupts();
+}
+
 void CX86RecompilerOps::COP0_MT()
 {
     uint8_t *Jump;
@@ -7719,22 +7730,51 @@ void CX86RecompilerOps::COP0_MT()
         break;
     case 13: //cause
         AndConstToVariable(0xFFFFCFF, &_CP0[m_Opcode.rd], CRegName::Cop0[m_Opcode.rd]);
-        if (IsConst(m_Opcode.rt))
+        if (bHaveDebugger())
         {
-            if ((GetMipsRegLo(m_Opcode.rt) & 0x300) != 0 && bHaveDebugger()){ g_Notify->DisplayError("Set IP0 or IP1"); }
-        }
-        else if (bHaveDebugger())
-        {
-            UnknownOpcode();
-            return;
-        }
-        m_RegWorkingSet.BeforeCallDirect();
+            if (IsConst(m_Opcode.rt))
+            {
+                CheckCp0Status(GetMipsRegLo(m_Opcode.rt));
+
+                m_RegWorkingSet.BeforeCallDirect();
 #ifdef _MSC_VER
-        MoveConstToX86reg((uint32_t)g_Reg, x86_ECX);
-        Call_Direct(AddressOf(&CRegisters::CheckInterrupts), "CRegisters::CheckInterrupts");
+                MoveConstToX86reg((uint32_t)g_Reg, x86_ECX);
 #else
-        PushImm32((uint32_t)g_Reg);
-        Call_Direct(AddressOf(&CRegisters::CheckInterrupts), "CRegisters::CheckInterrupts");
+                PushImm32((uint32_t)g_Reg);
+#endif
+                Call_Direct(AddressOf(&CRegisters::CheckInterrupts), "CRegisters::CheckInterrupts");
+            }
+            else
+            {
+                if (IsMapped(m_Opcode.rt))
+                {
+                    m_RegWorkingSet.BeforeCallDirect();
+                    MoveX86RegToX86Reg(GetMipsRegMapLo(m_Opcode.rt), x86_EDX);
+                }
+                else
+                {
+                    Map_TempReg(x86_EDX, m_Opcode.rt, false);
+                    m_RegWorkingSet.BeforeCallDirect();
+                }
+#ifdef _MSC_VER
+                MoveConstToX86reg((uint32_t)g_Reg, x86_ECX);
+#else
+                PushImm32((uint32_t)g_Reg);
+#endif
+                Call_Direct(AddressOf(&CheckRtAndInterrupts), "CheckRtAndInterrupts");
+            }
+        }
+        else
+        {
+            m_RegWorkingSet.BeforeCallDirect();
+#ifdef _MSC_VER
+            MoveConstToX86reg((uint32_t)g_Reg, x86_ECX);
+#else
+            PushImm32((uint32_t)g_Reg);
+#endif
+            Call_Direct(AddressOf(&CRegisters::CheckInterrupts), "CRegisters::CheckInterrupts");
+        }
+#ifndef _MSC_VER
         AddConstToX86Reg(x86_ESP, 4);
 #endif
         m_RegWorkingSet.AfterCallDirect();
