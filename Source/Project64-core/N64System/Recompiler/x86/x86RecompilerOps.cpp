@@ -7543,7 +7543,7 @@ void CX86RecompilerOps::COP0_MF()
 
 static void CheckCp0Status(uint32_t status)
 {
-    if ((status & 0x300) != 0){ g_Notify->DisplayError("Set IP0 or IP1"); }
+    if ((status & 0x300) != 0){ g_Notify->DisplayError(stdstr_f("Unknown Status %X", status).c_str()); }
 }
 
 static void CheckRtAndInterrupts(CRegisters *reg, uint32_t status)
